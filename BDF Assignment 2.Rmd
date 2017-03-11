@@ -16,6 +16,12 @@ library(gridExtra) #for gridarrange
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
+#What contemporaneous relationships do you think there should be between these variables and currency returns (i.e., percentage changes in the spot rate)?
+
+* X1, interest rates, a higher inflation rate differential to the dollar should increase spot price, as investors move their money to banks where the interest rates are higher
+* X2, inflation, a higher inflation differential to the dollar should decrease spot prices as investors and consumers update expectations that the currency will buy fewer local goods and services in the future
+* X3, industrial production, a higher IP differential to the dollar should increase spot price, as this is a proxy for growth in the economy
+* X4, money supply, a higher money supply should decrease spot price, as, if money demand is kept constant, this will decrease the value of the currency as per the rules of supply and demand (this is similar to the inflation variable)
 
 ```{r}
 ##creating 1 df from each sheet in the variable construction
@@ -39,14 +45,14 @@ for (i in 1:9) dflist[[i]] <- data.frame(yt=y[2:nrow(y),i+1],
 Results of a 20-window length rolling linear regression, including the MSE and the average value of each of the betas for each currency:
 
 ```{r}
-windowlength <- 20
+windowlength <- 10
 
 #initialise vectors to store average betas for each variable
 meanx1beta <- vector()
 meanx2beta <- vector()
 meanx3beta <- vector()
 meanx4beta <- vector()
-MSE <- vector()
+MSE.linear <- vector()
 
 for (j in 1:9) {
 prd.linear <- vector()
@@ -68,7 +74,7 @@ for (tau in windowlength:(nrow(dflist[[j]])-1)) {
 
 #for each currency
 #calculate the MSE, and add to vector
-MSE <- c(MSE,(1/length(prd.linear))*sum((prd.linear-dflist[[j]][(windowlength+1):412,"yt"])^2))
+MSE.linear <- c(MSE.linear,(1/length(prd.linear))*sum((prd.linear-dflist[[j]][(windowlength+1):412,"yt"])^2))
 #store the mean of the betas, and add to vector
 meanx1beta <- c(meanx1beta, mean(x1betas))
 meanx2beta <- c(meanx2beta, mean(x2betas))
@@ -79,7 +85,7 @@ meanx4beta <- c(meanx4beta, mean(x4betas))}
 betasdf <- data.frame(Currency=c("AUD","CAD","CHF",
                                  "EUR","GBP","JPY",
                                  "NOK","NZD","SEK"),
-                      MSE=MSE,
+                      MSE=MSE.linear,
                       meanx1beta=meanx1beta,
                       meanx2beta=meanx2beta,
                       meanx3beta=meanx3beta,
