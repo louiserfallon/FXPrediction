@@ -118,6 +118,7 @@ $RSS+\lambda|\beta_k|)$. Using 5-fold cross validation across the full dataset, 
 
 :( lasso is choosing lamdbas that mean that no variables are chosen
 
+Need to discuss if this is the correct method, or we should be doing something more about predicting just the next value.
 ```{r}      
 x1beta.lasso <- vector()
 x2beta.lasso <- vector()
@@ -129,9 +130,10 @@ MSE.fulllasso <- vector()
 R2OOS <- vector()
 
 for (j in 1:9)
-{     cvfit <-  cv.glmnet(as.matrix(dflist[[j]][,2:5]),
+{ #could make folds so that the training data is the length of the window    
+  cvfit <-  cv.glmnet(as.matrix(dflist[[j]][,2:5]),
                                as.matrix(dflist[[j]][,1]),
-                               alpha = 1, standardize=TRUE)
+                               alpha = 1, standardize=TRUE, nfolds=40)
       lambda.lasso <- c(lambda.lasso,cvfit$lambda.min)
       x1beta.lasso <- c(x1beta.lasso,coef(cvfit, s = "lambda.min")[2])
       x2beta.lasso <- c(x2beta.lasso,coef(cvfit, s = "lambda.min")[3])
@@ -139,8 +141,8 @@ for (j in 1:9)
       x4beta.lasso <- c(x4beta.lasso,coef(cvfit, s = "lambda.min")[5])
       
       #nonrollingregression
-      mdl.fulllasso <- glmnet(as.matrix(dflist[[j]][(tau-windowlength+1):tau,2:5]),
-                               as.matrix(dflist[[j]][(tau-windowlength+1):tau,1]),
+      mdl.fulllasso <- glmnet(as.matrix(dflist[[j]][,2:5]),
+                               as.matrix(dflist[[j]][,1]),
                                alpha = 1, lambda=cvfit$lambda.min,
                                standardize=TRUE)
       prd.fulllasso <- predict(mdl.fulllasso, newx = as.matrix(dflist[[j]][,2:5]), s = "lambda.min")
@@ -150,7 +152,7 @@ for (j in 1:9)
 displaydf.lasso <- data.frame(Currency=c("AUD","CAD","CHF",
                                  "EUR","GBP","JPY",
                                  "NOK","NZD","SEK"),
-                      meanMSE=MSE.fulllasso,
+                      MSE=MSE.fulllasso,
                       lambda.lasso=lambda.lasso,
                       x1beta.lasso=x1beta.lasso,
                       x2beta.lasso=x2beta.lasso,
@@ -159,7 +161,11 @@ displaydf.lasso <- data.frame(Currency=c("AUD","CAD","CHF",
 kable(displaydf.lasso)
 ```
 
+trying to find the best alpha
+AUD
+
 ```{r}
+j <- 1
 foldid=sample(1:10,size=length(dflist[[j]][,1]),replace=TRUE)
 cv1=cv.glmnet(as.matrix(dflist[[j]][,2:5]),
                                as.matrix(dflist[[j]][,1]),foldid=foldid,alpha=1)
@@ -167,6 +173,7 @@ cv.5=cv.glmnet(as.matrix(dflist[[j]][,2:5]),
                                as.matrix(dflist[[j]][,1]),foldid=foldid,alpha=.5)
 cv0=cv.glmnet(as.matrix(dflist[[j]][,2:5]),
                                as.matrix(dflist[[j]][,1]),foldid=foldid,alpha=0)
+##plot only looks good when you knit
 par(mfrow=c(2,2))
 plot(cv1);plot(cv.5);plot(cv0)
 plot(log(cv1$lambda),cv1$cvm,pch=19,col="red",xlab="log(Lambda)",ylab=cv1$name)
@@ -175,8 +182,29 @@ points(log(cv0$lambda),cv0$cvm,pch=19,col="blue")
 legend("topleft",legend=c("alpha= 1","alpha= .5","alpha 0"),pch=19,col=c("red","grey","blue"))
 ```
 
-Finding the tuning parameters for the elastic net method:
+CAD
+
 ```{r}
+j <- 2
+foldid=sample(1:10,size=length(dflist[[j]][,1]),replace=TRUE)
+cv1=cv.glmnet(as.matrix(dflist[[j]][,2:5]),
+                               as.matrix(dflist[[j]][,1]),foldid=foldid,alpha=1)
+cv.5=cv.glmnet(as.matrix(dflist[[j]][,2:5]),
+                               as.matrix(dflist[[j]][,1]),foldid=foldid,alpha=.5)
+cv0=cv.glmnet(as.matrix(dflist[[j]][,2:5]),
+                               as.matrix(dflist[[j]][,1]),foldid=foldid,alpha=0)
+##plot only looks good when you knit
+par(mfrow=c(2,2))
+plot(cv1);plot(cv.5);plot(cv0)
+plot(log(cv1$lambda),cv1$cvm,pch=19,col="red",xlab="log(Lambda)",ylab=cv1$name)
+points(log(cv.5$lambda),cv.5$cvm,pch=19,col="grey")
+points(log(cv0$lambda),cv0$cvm,pch=19,col="blue")
+legend("topleft",legend=c("alpha= 1","alpha= .5","alpha 0"),pch=19,col=c("red","grey","blue"))
+```
+
+```{r eval=FALSE}
+#Finding the tuning parameters for the elastic net method:
+#Doesn't work
 j <- 1
 lambda <- 10^seq(2, -2, length = 100)
 alpha <- seq(0,1,length = 10)
@@ -202,6 +230,75 @@ my.glmnet.model <- my.train$finalModel
 #print coefficients of the final model (model with optimal lambda)
 coef(my.glmnet.model, s = my.train$bestTune$lambda)
 
+```
+
+#LASSO
+
+```{r}
+windowlength <- 20
+
+#initialise vectors to store average betas for each variable
+meanx1beta <- vector()
+meanx2beta <- vector()
+meanx3beta <- vector()
+meanx4beta <- vector()
+MSE.lasso <- vector()
+MSE.mean.lasso <- vector()
+R2OOS <- vector()
+
+for (j in 1:9) {
+prd.mean.lasso <- vector()
+prd.lasso <- vector()
+x1betas <- vector()
+x2betas <- vector()
+x3betas <- vector()
+x4betas <- vector()
+  
+for (tau in windowlength:(nrow(dflist[[j]])-1)) {
+##HISTORICAL MEAN MODEL
+      prd.mean.lasso <- c(prd.mean.lasso,mean(y[(tau-windowlength+1):tau,j+1]))
+##LASSO MODEL
+#create model on training data within the window (up to tau)
+      temp.mdl.lasso <- glmnet(as.matrix(dflist[[j]][(tau-windowlength+1):tau,2:5]),
+                               as.matrix(dflist[[j]][(tau-windowlength+1):tau,1]),
+                               alpha = 1, lambda=lambda.lasso[j],
+                               standardize=TRUE)
+#predict the tau+1th spot rate
+      prd.lasso <- c(prd.lasso,predict(temp.mdl.lasso, newx=as.matrix(dflist[[j]][tau+1,2:5])))
+#store the x1 beta so we can check later if the signs are usually correct
+      x1betas <- c(x1betas,coef(temp.mdl.lasso)[2])
+      x2betas <- c(x2betas,coef(temp.mdl.lasso)[3])
+      x3betas <- c(x3betas,coef(temp.mdl.lasso)[4])
+      x4betas <- c(x4betas,coef(temp.mdl.lasso)[5])}
+
+#for each currency
+#calculate the MSE, and add to vector
+MSE.mean.lasso <- c(MSE.mean.lasso,(1/length(prd.mean.lasso))*sum((prd.mean.lasso-dflist[[j]][(windowlength+1):412,"yt"])^2))
+MSE.lasso <- c(MSE.lasso,(1/length(prd.lasso))*sum((prd.lasso-dflist[[j]][(windowlength+1):412,"yt"])^2))
+#store the mean of the betas, and add to vector
+meanx1beta <- c(meanx1beta, mean(x1betas))
+meanx2beta <- c(meanx2beta, mean(x2betas))
+meanx3beta <- c(meanx3beta, mean(x3betas))
+meanx4beta <- c(meanx4beta, mean(x4betas))
+#calculate Rsquared OOS
+#(note not exactly the same as the notes but both numerator + denominator on the
+#right are multiplied by 1/the number of predictions so mathematically the same
+R2OOS <- c(R2OOS,1-(MSE.lasso[j]/MSE.mean[j]))
+}
+
+
+#display data frame of the MSE and average betas
+displaydf <- data.frame(Currency=c("AUD","CAD","CHF",
+                                 "EUR","GBP","JPY",
+                                 "NOK","NZD","SEK"),
+                      meanMSE=MSE.mean.lasso,
+                      lassoMSE=MSE.lasso,
+                      R2OOS=R2OOS,
+                      meanx1beta=meanx1beta,
+                      meanx2beta=meanx2beta,
+                      meanx3beta=meanx3beta,
+                      meanx4beta=meanx4beta)
+kable(displaydf)
 ```
 
 \newpage
