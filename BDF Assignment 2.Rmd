@@ -13,6 +13,8 @@ library(reshape2) #for melt
 library(knitr) #for kable
 library(plyr) #for ddply
 library(gridExtra) #for gridarrange
+library(glmnet) #for glm
+library(caret) #for train control
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
@@ -110,9 +112,62 @@ displaydf <- data.frame(Currency=c("AUD","CAD","CHF",
 kable(displaydf)
 ```
 
+
+```{r}
+#3,5,6,8 look good
+#1,2,4,7,9 look bad, just take highest lambda
+j <- 9
+windowlength <- 10
+tau <- 10
+#trying to get a glmnet to work
+      cvfit = cv.glmnet(as.matrix(dflist[[j]][,2:5]),
+                               as.matrix(dflist[[j]][,1]),
+                               alpha = 1,
+                        standardize=TRUE)
+      plot(cvfit)
+      cvfit$lambda.min
+      coef(cvfit, s = "lambda.min")
+      #to fit with this value
+      temp.mdl.lasso <- glmnet(as.matrix(dflist[[j]][(tau-windowlength+1):tau,2:5]),
+                               as.matrix(dflist[[j]][(tau-windowlength+1):tau,1]),
+                               alpha = 1, lambda=cvfit$lambda.min,
+                               standardize=TRUE)
+      
+```
+
+
+Finding the tuning parameters for the elastic net method:
+```{r}
+j <- 1
+lambda <- 10^seq(2, -2, length = 100)
+alpha <- seq(0,1,length = 10)
+
+#set up cross validation method for train function
+trn <- trainControl(method = "repeatedCV", number = 10, repeats = 5)
+
+#set up search grid for alpha and lambda parameters
+search.grid <- expand.grid(.alpha = alpha, .lambda = lambda)
+
+#perform cross validationforecasting salary based on all features
+set.seed(4243)
+my.train <- train(yt ~ ., data = dflist[[j]], method = "glmnet", tuneGrid = search.grid,
+                  trControl = trn, standardize = TRUE, maxit = 1000000)
+
+#plot CV performance
+plot(my.train)
+
+#return best turning parameters
+my.train$bestTune
+#retrieve best model (model with the best alpha)
+my.glmnet.model <- my.train$finalModel
+#print coefficients of the final model (model with optimal lambda)
+coef(my.glmnet.model, s = my.train$bestTune$lambda)
+
+```
+
 \newpage
 
-Correlation plot of lagged X variables on Y variable for all currencies (can make this prettier if we want to use it, struggling to make the red text bold)
+(can make this prettier if we want to use it, struggling to make the red text bold)
 
 ```{r fig.height=11, fig.align="center", fig.width=10}
 plotlist <- list()
@@ -150,4 +205,4 @@ grid.arrange(plotlist[["AUD"]],plotlist[["CAD"]],plotlist[["CHF"]],
              plotlist[["NOK"]],plotlist[["NZD"]],plotlist[["SEK"]], nrow=3)
 ```
 
-Fig1
+Figure 1: Correlation plot of lagged X variables on Y variable for all currencies, blue line showing the smoothed trend, and red text showing the correlation.
