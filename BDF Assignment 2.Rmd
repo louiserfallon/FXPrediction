@@ -112,29 +112,68 @@ displaydf <- data.frame(Currency=c("AUD","CAD","CHF",
 kable(displaydf)
 ```
 
+#LASSO parameter tuning
+The LASSO method extends the Linear Regression method from minimising $RSS$ to minimising 
+$RSS+\lambda|\beta_k|)$. Using 5-fold cross validation across the full dataset, the lambda with the lowest mean squared error is identified for each currency.
 
-```{r}
-#3,5,6,8 look good
-#1,2,4,7,9 look bad, just take highest lambda
-j <- 9
-windowlength <- 10
-tau <- 10
-#trying to get a glmnet to work
-      cvfit = cv.glmnet(as.matrix(dflist[[j]][,2:5]),
+:( lasso is choosing lamdbas that mean that no variables are chosen
+
+```{r}      
+x1beta.lasso <- vector()
+x2beta.lasso <- vector()
+x3beta.lasso <- vector()
+x4beta.lasso <- vector()
+lambda.lasso <- vector()
+prd.fulllasso <- vector()
+MSE.fulllasso <- vector()
+R2OOS <- vector()
+
+for (j in 1:9)
+{     cvfit <-  cv.glmnet(as.matrix(dflist[[j]][,2:5]),
                                as.matrix(dflist[[j]][,1]),
-                               alpha = 1,
-                        standardize=TRUE)
-      plot(cvfit)
-      cvfit$lambda.min
-      coef(cvfit, s = "lambda.min")
-      #to fit with this value
-      temp.mdl.lasso <- glmnet(as.matrix(dflist[[j]][(tau-windowlength+1):tau,2:5]),
+                               alpha = 1, standardize=TRUE)
+      lambda.lasso <- c(lambda.lasso,cvfit$lambda.min)
+      x1beta.lasso <- c(x1beta.lasso,coef(cvfit, s = "lambda.min")[2])
+      x2beta.lasso <- c(x2beta.lasso,coef(cvfit, s = "lambda.min")[3])
+      x3beta.lasso <- c(x3beta.lasso,coef(cvfit, s = "lambda.min")[4])
+      x4beta.lasso <- c(x4beta.lasso,coef(cvfit, s = "lambda.min")[5])
+      
+      #nonrollingregression
+      mdl.fulllasso <- glmnet(as.matrix(dflist[[j]][(tau-windowlength+1):tau,2:5]),
                                as.matrix(dflist[[j]][(tau-windowlength+1):tau,1]),
                                alpha = 1, lambda=cvfit$lambda.min,
                                standardize=TRUE)
-      
+      prd.fulllasso <- predict(mdl.fulllasso, newx = as.matrix(dflist[[j]][,2:5]), s = "lambda.min")
+      MSE.fulllasso <- c(MSE.fulllasso,(1/length(prd.fulllasso))*sum((prd.fulllasso-dflist[[j]]["yt"])^2))}
+
+#display data frame of the MSE and average betas
+displaydf.lasso <- data.frame(Currency=c("AUD","CAD","CHF",
+                                 "EUR","GBP","JPY",
+                                 "NOK","NZD","SEK"),
+                      meanMSE=MSE.fulllasso,
+                      lambda.lasso=lambda.lasso,
+                      x1beta.lasso=x1beta.lasso,
+                      x2beta.lasso=x2beta.lasso,
+                      x3beta.lasso=x3beta.lasso,
+                      x4beta.lasso=x4beta.lasso)
+kable(displaydf.lasso)
 ```
 
+```{r}
+foldid=sample(1:10,size=length(dflist[[j]][,1]),replace=TRUE)
+cv1=cv.glmnet(as.matrix(dflist[[j]][,2:5]),
+                               as.matrix(dflist[[j]][,1]),foldid=foldid,alpha=1)
+cv.5=cv.glmnet(as.matrix(dflist[[j]][,2:5]),
+                               as.matrix(dflist[[j]][,1]),foldid=foldid,alpha=.5)
+cv0=cv.glmnet(as.matrix(dflist[[j]][,2:5]),
+                               as.matrix(dflist[[j]][,1]),foldid=foldid,alpha=0)
+par(mfrow=c(2,2))
+plot(cv1);plot(cv.5);plot(cv0)
+plot(log(cv1$lambda),cv1$cvm,pch=19,col="red",xlab="log(Lambda)",ylab=cv1$name)
+points(log(cv.5$lambda),cv.5$cvm,pch=19,col="grey")
+points(log(cv0$lambda),cv0$cvm,pch=19,col="blue")
+legend("topleft",legend=c("alpha= 1","alpha= .5","alpha 0"),pch=19,col=c("red","grey","blue"))
+```
 
 Finding the tuning parameters for the elastic net method:
 ```{r}
