@@ -10,27 +10,12 @@ output:
 library(readxl) #for read_excel
 library(ggplot2) #for ggplot
 library(reshape2) #for melt
+library(knitr) #for kable
+library(plyr) #for ddply
+library(gridExtra) #for gridarrange
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
-
-```{r}
-spotrates <- read_excel("FX.xlsx", sheet = 1)
-#removing the bottom 2 lines that seem to come in the excel that have NAs.
-#if your data doesn't have them then this code does nothing
-spotrates <- spotrates[!is.na(spotrates$Date), ]
-```
-
-```{r}
-##direct comparison plot
-spotratemelt <- melt(spotrates, id="Date")
-ggplot(spotratemelt, aes( x=Date , y=value, col=variable)) + geom_line()
-```
-
-```{r fig.height=10}
-##comparison plot with scales="free" so that axes are different per currency
-ggplot(spotratemelt, aes( x=Date , y=value, col=variable)) + geom_line() + facet_grid( variable ~ ., scales="free")
-```
 
 ```{r}
 ##creating 1 df from each sheet in the variable construction
@@ -43,82 +28,15 @@ X4 <-read_excel("variable_construction.xlsx", sheet = 8)
 ##creating 9 dataframes (one for each currency) with the relevant variables
 ##and putting them into a list (need a list in order to loop)
 dflist <- list()
-for (i in 1:9) dflist[[i]] <- data.frame(y=y[,i+1],
-                          X1=X1[,i+1],
-                          X2=X2[,i+1],
-                          X3=X3[,i+1],
-                          X4=X4[,i+1])
+#putting ys next to lagged xs
+for (i in 1:9) dflist[[i]] <- data.frame(yt=y[2:nrow(y),i+1],
+                          X1=X1[1:(nrow(y)-1),i+1],
+                          X2=X2[1:(nrow(y)-1),i+1],
+                          X3=X3[1:(nrow(y)-1),i+1],
+                          X4=X4[1:(nrow(y)-1),i+1])
 ```
 
-```{R}
-##taking the australian df from this list
-AUS.df <- dflist[[1]]
-#taking off first row with NAs
-AUS.df <- AUS.df[complete.cases(AUS.df),]
-```
-
-```{r}
-windowlength <- 20
-prd.linear <- vector()
-x1betas <- vector()
-x2betas <- vector()
-x3betas <- vector()
-x4betas <- vector()
-
-  
-for (i in windowlength:(nrow(AUS.df)-1)) {
-#create model on training data within the window (up to tau)
-      temp.mdl.linear <- lm(y ~ ., data=AUS.df[(i-windowlength):i,])
-#predict the tau+1th spot rate
-    prd.linear <- c(prd.linear,predict(temp.mdl.linear, newdata=AUS.df[i+1,2:5]))
-#store the x1 beta so we can check later if the signs are usually correct
-        x1betas <- c(x1betas,temp.mdl.linear$coefficients[2])
-        x2betas <- c(x2betas,temp.mdl.linear$coefficients[3])
-        x3betas <- c(x3betas,temp.mdl.linear$coefficients[4])
-        x4betas <- c(x4betas,temp.mdl.linear$coefficients[5])
-        }
-
-MSE <- (1/length(prd.linear))*sum((prd.linear-AUS.df[(windowlength+1):412,"y"])^2)
-MSE
-```
-
-```{r}
-#interest rate coef
-mean(x1betas) #is below 0, not what is expected (w=5)
-plot(x1betas) #looks broadly around 0, some anomalies (w=5)
-hist(x1betas) 
-```
-
-```{r}
-#inflation coef
-mean(x2betas) #is above 0 - not what is expected (w=5)
-plot(x2betas) #looks broadly above 0 (w=5)
-hist(x2betas) #looks to generally be below 0 but some high right tail vals (w=5)
-```
-
-```{r}
-#IP differential
-mean(x3betas) #is above 0 (w=5)
-plot(x3betas) #looks broadly around 0, much higher abs value (expected bc bigger scale)
-hist(x3betas) #looks to generally be below 0 but some high right tail vals (w=5)
-```
-
-```{r}
-#MS differential
-mean(x4betas) #is above 0 - not what is expected (w=5)
-plot(x4betas) #looks broadly around 0, again higher abs value (expected bc bigger scale) (w=5)
-hist(x4betas)
-```
-
-Comments
-
-* AUD has some strange signs when w=5 and w=20
-* CAD with window 50 has "correct" signs, 20 the IR coefficient looks a little off but the rest looks ok
-* CHF signs look all wrong at w=20
-* EUR signs look ok except IP at w=20
-* GBP signs are half "wrong"
-
-Loop
+Results of a 20-window length rolling linear regression, including the MSE and the average value of each of the betas for each currency:
 
 ```{r}
 windowlength <- 20
@@ -137,24 +55,27 @@ x2betas <- vector()
 x3betas <- vector()
 x4betas <- vector()
   
-for (i in windowlength:(nrow(dflist[[j]])-1)) {
+for (tau in windowlength:(nrow(dflist[[j]])-1)) {
 #create model on training data within the window (up to tau)
-      temp.mdl.linear <- lm(y ~ ., data=dflist[[j]][(i-windowlength+1):i,])
+      temp.mdl.linear <- lm(yt ~ ., data=dflist[[j]][(tau-windowlength+1):tau,])
 #predict the tau+1th spot rate
-      prd.linear <- c(prd.linear,predict(temp.mdl.linear, newdata=dflist[[j]][i+1,2:5]))
+      prd.linear <- c(prd.linear,predict(temp.mdl.linear, newdata=dflist[[j]][tau+1,2:5]))
 #store the x1 beta so we can check later if the signs are usually correct
       x1betas <- c(x1betas,temp.mdl.linear$coefficients[2])
       x2betas <- c(x2betas,temp.mdl.linear$coefficients[3])
       x3betas <- c(x3betas,temp.mdl.linear$coefficients[4])
-      x4betas <- c(x4betas,temp.mdl.linear$coefficients[5])
-        }
+      x4betas <- c(x4betas,temp.mdl.linear$coefficients[5])}
 
-MSE <- c(MSE,(1/length(prd.linear))*sum((prd.linear-dflist[[j]][(windowlength+1):412,"y"])^2))
+#for each currency
+#calculate the MSE, and add to vector
+MSE <- c(MSE,(1/length(prd.linear))*sum((prd.linear-dflist[[j]][(windowlength+1):412,"yt"])^2))
+#store the mean of the betas, and add to vector
 meanx1beta <- c(meanx1beta, mean(x1betas))
 meanx2beta <- c(meanx2beta, mean(x2betas))
 meanx3beta <- c(meanx3beta, mean(x3betas))
 meanx4beta <- c(meanx4beta, mean(x4betas))}
 
+#display data frame of the MSE and average betas
 betasdf <- data.frame(Currency=c("AUD","CAD","CHF",
                                  "EUR","GBP","JPY",
                                  "NOK","NZD","SEK"),
@@ -163,8 +84,45 @@ betasdf <- data.frame(Currency=c("AUD","CAD","CHF",
                       meanx2beta=meanx2beta,
                       meanx3beta=meanx3beta,
                       meanx4beta=meanx4beta)
-betasdf
+kable(betasdf)
 ```
 
+\newpage
 
+Correlation plot of lagged X variables on Y variable for all currencies (can make this prettier if we want to use it, struggling to make the red text bold)
 
+```{r fig.height=11, fig.align="center", fig.width=10}
+plotlist <- list()
+for (i in 1:9)
+{
+#get the name of the plot as the currency
+plotname <- c("AUD","CAD","CHF",
+              "EUR","GBP","JPY",
+              "NOK","NZD","SEK")[i]
+
+#melt data so that each y can be matched to each of the lagged variables
+meltdf <- melt(dflist[[i]], id="yt")
+#create plot with points and smoothed line
+p <- ggplot(meltdf , aes(y=value, x=yt)) + geom_point(alpha=0.2) + geom_smooth() + facet_grid( variable ~ ., scales="free") + theme_light()
+#add correlations
+cors <- ddply(meltdf, .(variable), summarise, cor = round(cor(yt, value), 2))
+#put correlations 25% of the way up the x axis of each plot
+cors$yaxis <- c((max(dflist[[i]][["X1"]])-min(dflist[[i]][["X1"]]))/4
+                +min(dflist[[i]][["X1"]]),
+               (max(dflist[[i]][["X2"]])-min(dflist[[i]][["X2"]]))/4
+                +min(dflist[[i]][["X2"]]),
+               (max(dflist[[i]][["X3"]])-min(dflist[[i]][["X3"]]))/4
+                +min(dflist[[i]][["X3"]]),
+               (max(dflist[[i]][["X4"]])-min(dflist[[i]][["X4"]]))/4
+                +min(dflist[[i]][["X4"]]))
+#put correlations 1/8th of the way up the x axis of the plot
+cors$xaxis <-  rep((max(dflist[[i]][["yt"]])-min(dflist[[i]][["yt"]]))/8 + min(dflist[[i]][["yt"]]),4)
+#add correlations to the plot
+p <- p + geom_text(data=cors, aes(label=cor, x=xaxis, y=yaxis, color="red")) + theme(legend.position="none", axis.text.x=element_blank(), axis.ticks.x=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank()) + ylab("") + ggtitle(plotname)
+##add plot to the list
+plotlist[[plotname]] <- p
+}
+grid.arrange(plotlist[["AUD"]],plotlist[["CAD"]],plotlist[["CHF"]],
+             plotlist[["EUR"]],plotlist[["GBP"]],plotlist[["JPY"]],
+             plotlist[["NOK"]],plotlist[["NZD"]],plotlist[["SEK"]], nrow=3)
+```
