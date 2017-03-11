@@ -23,6 +23,8 @@ knitr::opts_chunk$set(echo = FALSE)
 * X3, industrial production, a higher IP differential to the dollar should increase spot price, as this is a proxy for growth in the economy
 * X4, money supply, a higher money supply should decrease spot price, as, if money demand is kept constant, this will decrease the value of the currency as per the rules of supply and demand (this is similar to the inflation variable)
 
+However, the correlations between these variables are not consistent across time or across currencies, as can be seen by Figure 1.
+
 ```{r}
 ##creating 1 df from each sheet in the variable construction
 y <- read_excel("variable_construction.xlsx", sheet = 6)
@@ -42,7 +44,7 @@ for (i in 1:9) dflist[[i]] <- data.frame(yt=y[2:nrow(y),i+1],
                           X4=X4[1:(nrow(y)-1),i+1])
 ```
 
-Results of a 20-window length rolling linear regression, including the MSE and the average value of each of the betas for each currency:
+Results of a 20-window length rolling linear regression, compared to a historical mean model, including the MSE, the R2OOS, and the average value of each of the betas for each currency:
 
 ```{r}
 windowlength <- 10
@@ -53,8 +55,11 @@ meanx2beta <- vector()
 meanx3beta <- vector()
 meanx4beta <- vector()
 MSE.linear <- vector()
+MSE.mean <- vector()
+R2OOS <- vector()
 
 for (j in 1:9) {
+prd.mean <- vector()
 prd.linear <- vector()
 x1betas <- vector()
 x2betas <- vector()
@@ -62,6 +67,9 @@ x3betas <- vector()
 x4betas <- vector()
   
 for (tau in windowlength:(nrow(dflist[[j]])-1)) {
+##HISTORICAL MEAN MODEL
+      prd.mean <- c(prd.mean,mean(y[(tau-windowlength+1):tau,j+1]))
+##LINEAR MODEL
 #create model on training data within the window (up to tau)
       temp.mdl.linear <- lm(yt ~ ., data=dflist[[j]][(tau-windowlength+1):tau,])
 #predict the tau+1th spot rate
@@ -74,23 +82,32 @@ for (tau in windowlength:(nrow(dflist[[j]])-1)) {
 
 #for each currency
 #calculate the MSE, and add to vector
+MSE.mean <- c(MSE.mean,(1/length(prd.mean))*sum((prd.mean-dflist[[j]][(windowlength+1):412,"yt"])^2))
 MSE.linear <- c(MSE.linear,(1/length(prd.linear))*sum((prd.linear-dflist[[j]][(windowlength+1):412,"yt"])^2))
 #store the mean of the betas, and add to vector
 meanx1beta <- c(meanx1beta, mean(x1betas))
 meanx2beta <- c(meanx2beta, mean(x2betas))
 meanx3beta <- c(meanx3beta, mean(x3betas))
-meanx4beta <- c(meanx4beta, mean(x4betas))}
+meanx4beta <- c(meanx4beta, mean(x4betas))
+#calculate Rsquared OOS
+#(note not exactly the same as the notes but both numerator + denominator on the
+#right are multiplied by 1/the number of predictions so mathematically the same
+R2OOS <- c(R2OOS,1-(MSE.linear[j]/MSE.mean[j]))
+}
+
 
 #display data frame of the MSE and average betas
-betasdf <- data.frame(Currency=c("AUD","CAD","CHF",
+displaydf <- data.frame(Currency=c("AUD","CAD","CHF",
                                  "EUR","GBP","JPY",
                                  "NOK","NZD","SEK"),
-                      MSE=MSE.linear,
+                      meanMSE=MSE.mean,
+                      linearMSE=MSE.linear,
+                      R2OOS=R2OOS,
                       meanx1beta=meanx1beta,
                       meanx2beta=meanx2beta,
                       meanx3beta=meanx3beta,
                       meanx4beta=meanx4beta)
-kable(betasdf)
+kable(displaydf)
 ```
 
 \newpage
@@ -132,3 +149,5 @@ grid.arrange(plotlist[["AUD"]],plotlist[["CAD"]],plotlist[["CHF"]],
              plotlist[["EUR"]],plotlist[["GBP"]],plotlist[["JPY"]],
              plotlist[["NOK"]],plotlist[["NZD"]],plotlist[["SEK"]], nrow=3)
 ```
+
+Fig1
